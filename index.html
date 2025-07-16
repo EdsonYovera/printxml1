@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Boleta Electrónica XML</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 11px;
+    }
+
+    .boleta {
+      background: white;
+      width: 58mm;
+      padding: 0 4px;
+      font-size: 13px;
+      line-height: 1.5;
+      box-sizing: border-box;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .centrado {
+      text-align: center;
+      margin-top: 0;
+      padding-top: 0;
+    }
+
+    .centrado-texto {
+      font-size: 12px;
+      margin: 2px 0;
+      line-height: 1;
+    }
+
+    .centrado img {
+      max-width: 58mm;
+      width: 100%;
+      height: auto;
+      margin-bottom: 1px;
+      margin-top: 0;
+      display: block;
+
+    }
+
+    .centrado strong {
+      display: block;
+      font-size: 12px;
+      margin: 1px 0;
+      line-height: 1;
+    }
+
+    .txtblack {
+      font-weight: bold;
+    }
+
+    .titulo {
+      font-weight: bold;
+      font-size: 12px;
+      margin: 4px 0;
+      line-height: 1.1;
+    }
+
+    .ide {
+      font-size: 15px;
+      font-weight: bold;
+      margin: 1px 0;
+      line-height: 1;
+    }
+
+    .linea {
+      border-top: 1px solid #000;
+      margin: 5px 0;
+    }
+
+    table {
+      width: 100%;
+      font-size: 12px;
+      border-collapse: collapse;
+    }
+
+    td {
+      padding: 1px 0;
+      line-height: 1;
+    }
+
+    .derecha {
+      text-align: right;
+    }
+
+    p {
+      margin: 1px 0;
+      line-height: 1;
+      font-size: 12px;
+    }
+
+    #botones {
+      margin-bottom: 11px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="botones" class="mb-4 text-center">
+    <h3 class="my-3"><strong>Seleccionar Boleta XML</strong></h3>
+    <input type="file" id="fileInput" accept=".xml" class="form-control mb-3 w-auto mx-auto">
+    <button id="descargarPdf" disabled class="btn btn-primary">Descargar PDF</button>
+  </div>
+
+  <div class="boleta" id="output"></div>
+
+  <script>
+    let boletaGenerada = false;
+
+
+    function numeroALetras(num) {
+      const unidades = ["", "UNO", "DOS", "TRES", "CUATRO", "CINCO", "SEIS", "SIETE", "OCHO", "NUEVE"];
+      const decenas = ["", "DIEZ", "VEINTE", "TREINTA", "CUARENTA", "CINCUENTA", "SESENTA", "SETENTA", "OCHENTA", "NOVENTA"];
+      const especiales = { 11: "ONCE", 12: "DOCE", 13: "TRECE", 14: "CATORCE", 15: "QUINCE" };
+
+      function convertirEnteros(n) {
+        if (n === 0) return "CERO";
+        if (n < 10) return unidades[n];
+        if (n >= 11 && n <= 15) return especiales[n];
+        if (n < 100) {
+          const d = Math.floor(n / 10);
+          const u = n % 10;
+          return decenas[d] + (u ? " Y " + unidades[u] : "");
+        }
+        if (n < 1000) {
+          const c = Math.floor(n / 100);
+          const r = n % 100;
+          if (n === 100) return "CIEN";
+          return (c === 1 ? "CIENTO" : unidades[c] + "CIENTOS") + (r ? " " + convertirEnteros(r) : "");
+        }
+        if (n < 1000000) {
+          const miles = Math.floor(n / 1000);
+          const resto = n % 1000;
+          return (miles === 1 ? "MIL" : convertirEnteros(miles) + " MIL") + (resto ? " " + convertirEnteros(resto) : "");
+        }
+        return "Número muy grande";
+      }
+
+      const partes = num.toFixed(2).split(".");
+      const enteros = parseInt(partes[0]);
+      const decimales = partes[1];
+      return `${convertirEnteros(enteros)} SOLES Y ${decimales} CENTIMOS`;
+    }
+
+    document.getElementById("fileInput").addEventListener("change", function (event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(e.target.result, "text/xml");
+
+        const ns = {
+          cac: "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
+          cbc: "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+        };
+
+        function getText(tag, nsKey = "cbc", from = xml) {
+          return from.getElementsByTagNameNS(ns[nsKey], tag)[0]?.textContent || '';
+        }
+
+        const boletaID = getText("ID");
+        const fecha = getText("IssueDate");
+        const hora = getText("IssueTime").substring(0, 8);
+        window.boletaID = boletaID;
+        window.boletaFecha = fecha;
+        window.boletaHora = hora.replace(/:/g, "-");
+
+
+        const proveedor = xml.getElementsByTagNameNS(ns["cac"], "AccountingSupplierParty")[0];
+        const ruc = getText("ID", "cbc", proveedor);
+
+        const name = getText("RegistrationName", "cbc", proveedor);
+        const nombreComercial = getText("Name", "cbc", proveedor);
+        const direccion = getText("Line", "cbc", proveedor);
+        const ciudad = getText("CityName", "cbc", proveedor);
+        const distrito = getText("District", "cbc", proveedor);
+        const region = getText("CountrySubentity", "cbc", proveedor);
+
+        const cliente = xml.getElementsByTagNameNS(ns["cac"], "AccountingCustomerParty")[0];
+        const idClienteNode = cliente.getElementsByTagNameNS(ns["cbc"], "ID")[0];
+        const docCliente = idClienteNode?.textContent || '';
+        const tipoDocCliente = idClienteNode?.getAttribute("schemeID") === "6" ? "RUC"
+          : idClienteNode?.getAttribute("schemeID") === "1" ? "DNI"
+            : "DOC NO ESPECIFICADO";
+
+        const razonCliente = getText("RegistrationName", "cbc", cliente);
+
+        const total = getText("PayableAmount");
+        const exonerado = getText("TaxableAmount");
+        const IGV = getText("TaxAmount");
+
+        const totalEnLetras = numeroALetras(parseFloat(total));
+
+        const productos = xml.getElementsByTagNameNS(ns["cac"], "InvoiceLine");
+        let detalleHTML = "";
+        for (let i = 0; i < productos.length; i++) {
+          const qty = parseInt(getText("InvoicedQuantity", "cbc", productos[i]));
+          const desc = getText("Description", "cbc", productos[i]);
+          const pu = parseFloat(getText("PriceAmount", "cbc", productos[i])).toFixed(2);
+          const totalItem = parseFloat(getText("LineExtensionAmount", "cbc", productos[i])).toFixed(2);
+
+          detalleHTML += `
+            <tr>
+              <td>${qty}</td>
+              <td>${desc}</td>
+              <td class="derecha">${pu} </td>
+              <td class="derecha">${totalItem}</td>
+            </tr>
+          `;
+        }
+
+        document.getElementById("output").innerHTML = `
+        <div class="centrado"><img src="logo.jpg"></div>
+<div class="centrado centrado-texto txtblack">${nombreComercial}</div>
+<div class="centrado centrado-texto txtblack">RUC: ${ruc}</div>
+<div class="centrado centrado-texto">${direccion} - ${distrito} - ${ciudad} - ${region}</div>
+<div class="centrado centrado-texto">CEL: 921263459/933759331</div>
+          <div class="centrado titulo">BOLETA DE VENTA ELECTRÓNICA</div>
+<div class="centrado ide">${boletaID}</div>
+          <div class="linea"></div>
+          <p><strong>CLIENTE:</strong> ${razonCliente}</p>
+<p><strong>${tipoDocCliente}:</strong> ${docCliente}</p>
+
+          <p><strong>Emisión:</strong> ${fecha}  ${hora}</p>
+          <div class="linea"></div>
+          <table>
+            <thead>
+              <tr><th>CANT.</th><th>DESCRIPCIÓN</th><th class="derecha">P.U.</th><th class="derecha">TOTAL</th></tr>
+            </thead>
+            <tbody>${detalleHTML}</tbody>
+          </table>
+          <div class="linea"></div>
+          <table>
+  <tr><td>OP.GRAVADA</td><td class="derecha">S/ 0.00</td></tr>
+  <tr><td>OP.EXONERADA</td><td class="derecha">S/ ${exonerado}</td></tr>
+  <tr><td>OP.INAFECTA</td><td class="derecha">S/ 0.00</td></tr>
+  <tr><td>IGV</td><td class="derecha">${IGV}</td></tr>
+  <tr><td><strong>TOTAL</strong></td><td class="derecha"><strong>S/ ${total}</strong></td></tr>
+</table>
+          <div class="linea"></div>
+          <p class="centrado">SON ${totalEnLetras}</p>
+
+          <p class="centrado titulo"><em>GRACIAS, DIOS TE BENDIGA</em></p>
+        `;
+
+        document.getElementById("descargarPdf").disabled = false;
+        boletaGenerada = true;
+      };
+
+      reader.readAsText(file);
+    });
+
+    document.getElementById("descargarPdf").addEventListener("click", () => {
+      if (!boletaGenerada) return;
+
+      const element = document.getElementById("output");
+      const opt = {
+        margin: 0,
+        filename: `${window.boletaID}_${window.boletaFecha}_${window.boletaHora}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 3 },
+        jsPDF: {
+          unit: 'mm',
+          format: [58, element.offsetHeight * 0.264583],
+          orientation: 'portrait'
+        }
+      };
+      html2pdf().set(opt).from(element).save();
+    });
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+    integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous">
+  </script>
+</body>
+
+</html>
